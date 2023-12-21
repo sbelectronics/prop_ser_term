@@ -734,7 +734,6 @@ vt100_entry         mov     t1, par
                     add     _overlay_param, t1
                     add     _overlay_param +1, t1
                     add     _overlay_param +2, t1
-                    add     _overlay_param +3, t1
 
                     mov     DIRA, bell_mask
 
@@ -746,7 +745,7 @@ vt100_entry         mov     t1, par
 
 _loop               call    #charIn
                     cmp     ch, #$07 wz             ' bell
-{{        if_z        jmp     #_bell                 XXX smbaker had to remove this to compensate for adding the _overlay_param+3 line }}
+        if_z        jmp     #_bell
                     cmp     ch, #$08 wz             ' backspace
         if_z        jmp     #_bs
                     cmp     ch, #$09 wz             ' tab
@@ -888,6 +887,13 @@ scroll              mov     t1, scroll_top
 
 scroll_ret          ret
 
+                    ' XXX smbaker - I'm genuinely confused here. If we don't add these NOPs
+                    ' then we don't get video on startup. Maybe some kind of alignment problem.
+
+                    nop
+                    nop
+                    nop
+
 scroll_top          long    0
 scroll_count        long    0
 
@@ -924,7 +930,6 @@ _overlay_param
 esc_overlay_par     long    ((@_esc_end - @vt100_entry - 1) << 16) | ((@overlay_start - @vt100_entry + (@_esc_end - @_esc)) / 4) - 1
 attr_overlay_par    long    ((@_attr_end - @vt100_entry - 1) << 16) | ((@overlay_start - @vt100_entry + (@_attr_end - @_attr)) / 4) - 1
 vt_overlay_par      long    ((@_vt_end - @vt100_entry - 1) << 16) | ((@overlay_start - @vt100_entry + (@_vt_end - @_vt)) / 4) - 1
-sb_overlay_par      long    ((@_sb_end - @vt100_entry - 1) << 16) | ((@overlay_start - @vt100_entry + (@_sb_end - @_sb)) / 4) - 1
 
 ' uninitialised data and/or temporaries
 
@@ -1035,6 +1040,8 @@ _esc                mov     argc, #0
                     cmp     ch, #"m" wz
         if_z        mov     overlay_par, attr_overlay_par
         if_z        jmp     #overlay_load
+                    cmp     ch, #"S" wz
+        if_z        jmp     #_sbscrolla
 
                     mov     overlay_par, vt_overlay_par
                     jmp     #overlay_load
@@ -1074,6 +1081,14 @@ _cup                mov     y, args
         if_nc       mov     x, #scrn_columns
                     cmpsub  x, #1
                     jmp     #_done
+
+
+_sbscrolla          mov     y, args
+_sbscroll1a         cmp     y, #0 wz
+if_z                jmp     #_done
+                    sub     y, #1
+                    call    #scroll
+                    jmp     #_sbscroll1a
 
 _stbm               cmp     argc, #0   wz
         if_z        jmp     #:stbm1
@@ -1236,9 +1251,10 @@ _vt                 cmp     ch_mod, #"?" wz
         if_z        jmp     #_save
                     cmp     ch, #"u" wz
         if_z        jmp     #_restore
-                    mov     overlay_par, sb_overlay_par    ' XXX smbaker
+{{                    mov     overlay_par, sb_overlay_par    ' XXX smbaker
                     jmp     #overlay_load
-{{                    jmp     #_done           }}
+}}
+                    jmp     #_done           
 
 _pvt                cmp     ch, #"h" wz             ' private escape sequences
         if_z        jmp     #_toggles
@@ -1515,23 +1531,6 @@ decOut_ret          ret
 
                     long    $0[($ - overlay_start) // 2]
 _vt_end             fit     $1F0
-
-                    org     overlay_start
-
-_sb                 cmp     ch, #"S" wz
-        if_z        jmp     #_sbscroll
-                    jmp     #_done
-
-_sbscroll           mov     y, args
-_sbscroll1          cmp     y, #0 wz
-if_z                jmp     #_done
-                    sub     y, #1
-                    call    #scroll
-                    jmp     #_sbscroll1
-
-                    long    $0[($ - overlay_start) // 2]
-_sb_end             fit     $1F0
-
 
 CON
 
