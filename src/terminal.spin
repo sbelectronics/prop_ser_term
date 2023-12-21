@@ -734,6 +734,7 @@ vt100_entry         mov     t1, par
                     add     _overlay_param, t1
                     add     _overlay_param +1, t1
                     add     _overlay_param +2, t1
+                    add     _overlay_param +3, t1
 
                     mov     DIRA, bell_mask
 
@@ -745,7 +746,7 @@ vt100_entry         mov     t1, par
 
 _loop               call    #charIn
                     cmp     ch, #$07 wz             ' bell
-        if_z        jmp     #_bell
+{{        if_z        jmp     #_bell                 XXX smbaker had to remove this to compensate for adding the _overlay_param+3 line }}
                     cmp     ch, #$08 wz             ' backspace
         if_z        jmp     #_bs
                     cmp     ch, #$09 wz             ' tab
@@ -923,6 +924,7 @@ _overlay_param
 esc_overlay_par     long    ((@_esc_end - @vt100_entry - 1) << 16) | ((@overlay_start - @vt100_entry + (@_esc_end - @_esc)) / 4) - 1
 attr_overlay_par    long    ((@_attr_end - @vt100_entry - 1) << 16) | ((@overlay_start - @vt100_entry + (@_attr_end - @_attr)) / 4) - 1
 vt_overlay_par      long    ((@_vt_end - @vt100_entry - 1) << 16) | ((@overlay_start - @vt100_entry + (@_vt_end - @_vt)) / 4) - 1
+sb_overlay_par      long    ((@_sb_end - @vt100_entry - 1) << 16) | ((@overlay_start - @vt100_entry + (@_sb_end - @_sb)) / 4) - 1
 
 ' uninitialised data and/or temporaries
 
@@ -1116,6 +1118,8 @@ _attr               mov     a, args
         if_z        jmp     #:blink
                     cmp     a, #7 wz                ' reverse
         if_z        jmp     #:reverse
+                    cmp     a, #25 wz               ' no blink blink
+        if_z        jmp     #:noblink
                     cmp     a, #30 wc               ' foreground
         if_c        jmp     #:l2
                     cmp     a, #38 wc,wz
@@ -1142,6 +1146,8 @@ _attr               mov     a, args
                     jmp     #:l1
 :blink              or      txt_attr, #$01
                     jmp     #:l1
+:noblink            and     txt_attr, #$FE
+                    jmp     #:l1              
 :reverse            mov     t1, txt_attr
                     and     t1, #$0E
                     shl     t1, #3
@@ -1230,7 +1236,9 @@ _vt                 cmp     ch_mod, #"?" wz
         if_z        jmp     #_save
                     cmp     ch, #"u" wz
         if_z        jmp     #_restore
-                    jmp     #_done
+                    mov     overlay_par, sb_overlay_par    ' XXX smbaker
+                    jmp     #overlay_load
+{{                    jmp     #_done           }}
 
 _pvt                cmp     ch, #"h" wz             ' private escape sequences
         if_z        jmp     #_toggles
@@ -1507,6 +1515,22 @@ decOut_ret          ret
 
                     long    $0[($ - overlay_start) // 2]
 _vt_end             fit     $1F0
+
+                    org     overlay_start
+
+_sb                 cmp     ch, #"S" wz
+        if_z        jmp     #_sbscroll
+                    jmp     #_done
+
+_sbscroll           mov     y, args
+_sbscroll1          cmp     y, #0 wz
+if_z                jmp     #_done
+                    sub     y, #1
+                    call    #scroll
+                    jmp     #_sbscroll1
+
+                    long    $0[($ - overlay_start) // 2]
+_sb_end             fit     $1F0
 
 
 CON
