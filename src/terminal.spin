@@ -111,6 +111,9 @@ VAR
                                     ' 4 = cursor style
                                     ' 5 = cursor keys (vt-100, app, ws)
                                     ' 6 = app. cursor keys (vt-100, app, ws)
+                                    ' 7 = baud
+                                    ' 8 = repeat rate
+                                    ' 9 = 7bit
 
 OBJ
 
@@ -141,6 +144,7 @@ PUB Main | retval, ifd, epd
         ee_config[6] := 1
         ee_config[7] := 9   ' default to 115200
         ee_config[8] := %00_00100 ' 250 ms / 20 cps
+        ee_config[9] := 8
 
     ' initialize vga
 
@@ -198,6 +202,7 @@ PUB Main | retval, ifd, epd
     printAt(16, 22, $70, string("7 - Key Repeat Delay:"))
     printAt(18, 22, $70, string("8 - Key Repeat Rate:"))
     printAt(20, 22, $70, string("9 - Baud Rate:"))
+    printAt(22, 22, $70, string("0 - Bits (req restart):"))
     updateSettings
 
     printAt(24, 55, $F0, string("CTRL-F10 - Save and Exit"))
@@ -216,6 +221,11 @@ PUB Main | retval, ifd, epd
 
     txt_cursor := @cursor
     txt_scrn := @scrn
+
+    if (ee_config[9]==7)
+        mode7bit := 1
+    else
+        mode7bit := 0
 
     cognew(@vt100_entry, @vt100_entry)
     waitcnt(CNT + constant(512 * 16 * 2))
@@ -484,6 +494,11 @@ PRI keyPressed(k) | flags, mod, c, i, ptr
 
 PRI settingsKeypress(c) | i
     case c
+        "0":
+            if ee_config[9] == constant(7)
+                ee_config[9] := constant(8)
+            else
+                ee_config[9] := constant(7)
         "1":
             ee_config[2]++
             if ee_config[2] => 6
@@ -570,6 +585,13 @@ PRI exitSettings
 
     i2c.eeprom_write(EEPROM_CONFIG, @ee_config, 32)
 
+    ' XXX smbaker this doesn't work. I think the vt100 cog must need to be restarted or
+    ' something... 
+    if (ee_config[9]==7)
+        mode7bit := 1
+    else
+        mode7bit := 0
+
     OUTA[UART_TX_PIN] := 1
     DIRA[UART_TX_PIN] := 1
 
@@ -637,6 +659,12 @@ PRI updateSettings | i
 
     i := printDecAt(20, 37, $F0, LONG[@baudRates][ee_config[7]], 0)
     printAt(20, i, $F0, string("   "))
+
+    case ee_config[9]
+        7:
+            printAt(22, 46, $F0, string("7BIT"))
+        OTHER:
+            printAt(22, 46, $F0, string("8BIT"))
 
 PRI updateKeyConfig(row, column, value)
 
@@ -858,6 +886,13 @@ charIn              rdlong  t1, rx_head
                     mov     t1, rx_buffer
                     add     t1, t2
                     rdbyte  ch, t1
+
+                    rdbyte  t1, mode7bit
+                    cmp     t1, #0 wz
+        if_z        jmp     #not7bit
+                    and     ch, #127
+not7bit
+
                     add     t2, #1
                     and     t2, #ser#BUFFER_MASK
                     wrlong  t2, rx_tail
@@ -898,6 +933,8 @@ scroll_top          long    0
 scroll_count        long    0
 
 ' initialised data and/or presets
+
+mode7bit            long    0
 
 incdst              long    1 << 9
 
